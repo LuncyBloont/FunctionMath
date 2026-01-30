@@ -52,3 +52,9 @@ y = x^2   // Drawn in White
 *   Markers are parsed part of the `Assignment` node in the AST.
 *   The plotter analyzes the AST before execution to build a `plotConfig` map.
 *   **Note**: The AST analyzer recursively checks `ExpressionStatement` nodes to find assignments nested within top-level statements.
+
+## TODOs
+
+- **显示光标处曲线函数值与虚线**: 支持在鼠标位置显示每根曲线对应的 x 或 t 的函数值（在图例或悬浮提示中）；在图上绘制一条与鼠标位置对应的垂直虚线以便参照。涉及文件：`js/plotter.js`（交互与渲染）、`js/plotter.js` 的 UI 层或浮层组件、（如需）`js/evaluator.js`。验收标准：悬停时显示每条曲线的数值并在图上绘制虚线。
+
+- **异步更新函数值并缓存顶点**: 为每条曲线缓存其采样顶点数据；在进行平移/缩放/拖拽等交互时，使用异步任务（worker 或 requestAnimationFrame 分批）更新所有曲线的函数值以保持界面流畅。涉及文件：`js/plotter.js`（缓存与调度）、可能新增的 worker 文件或调度模块。验收标准：交互期间无卡顿，曲线顶点逐步异步刷新完成。

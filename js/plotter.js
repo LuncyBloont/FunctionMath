@@ -33,6 +33,11 @@ export class Plotter {
         this.lastMouseX = 0;
         this.lastMouseY = 0;
         
+        // Hover state for showing values at mouse
+        this.hover = { screenX: null, screenY: null, active: false };
+        // Map of currently visible variables and their draw config (populated each draw)
+        this.visiblePlotInfo = new Map();
+
         this._initEvents();
     }
 
@@ -71,11 +76,19 @@ export class Plotter {
                 this.offsetY += dy;
                 this.lastMouseX = e.clientX;
                 this.lastMouseY = e.clientY;
+                this.hover.active = false;
+                this.draw();
+            } else {
+                // Update hover position and request redraw to show values
+                this.hover.screenX = e.clientX;
+                this.hover.screenY = e.clientY;
+                this.hover.active = true;
                 this.draw();
             }
         });
 
         this.canvas.addEventListener('mouseup', () => this.isDragging = false);
+        this.canvas.addEventListener('mouseleave', () => { this.hover.active = false; this.draw(); });
         this.canvas.addEventListener('wheel', e => this.handleZoom(e));
     }
 
@@ -220,7 +233,277 @@ export class Plotter {
         
         if (this.ast) {
             this.drawPlots();
+            this._drawHover();
         }
+    }
+
+    _drawHover() {
+        if (!this.hover || !this.hover.active || !this.ast) return;
+        const ctx = this.ctx;
+        const screenX = this.hover.screenX;
+        const screenY = this.hover.screenY;
+        const worldX = this.toWorldX(screenX);
+
+        // Draw guide: vertical dashed line for Cartesian, radial ray for polar
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([6, 6]);
+        ctx.strokeStyle = '#888';
+        ctx.lineWidth = 1;
+        if (this.polarMode) {
+            // Ray from origin to mouse position
+            const originX = this.toScreenX(0);
+            const originY = this.toScreenY(0);
+            ctx.moveTo(originX, originY);
+            ctx.lineTo(screenX, screenY);
+            ctx.stroke();
+
+            // In polar mode, draw highlighted markers at every 2π multiple within view
+            if (this.polarMode) {
+                try {
+                    const pMin = Math.min(this.polarMin, this.polarMax);
+                    const pMax = Math.max(this.polarMin, this.polarMax);
+                    const twoPi = 2 * Math.PI;
+                    let kMin = Math.ceil(pMin / twoPi);
+                    let kMax = Math.floor(pMax / twoPi);
+                    // Cap to avoid too many markers
+                    const maxMarkers = 200;
+                    if (kMax - kMin + 1 > maxMarkers) {
+                        const centerK = Math.round((this._hoverAngle || 0) / twoPi);
+                        kMin = centerK - Math.floor(maxMarkers / 2);
+                        kMax = kMin + maxMarkers - 1;
+                    }
+
+                    // Use mouse angle as base and draw markers at t = t0 + k*2π
+                    const t0 = (typeof this._hoverAngle === 'number') ? this._hoverAngle : Math.atan2(this.toWorldY(screenY), this.toWorldX(screenX));
+                    // Compute k range so that t0 + k*twoPi falls within [pMin, pMax]
+                    let kMinAdj = Math.ceil((pMin - t0) / twoPi);
+                    let kMaxAdj = Math.floor((pMax - t0) / twoPi);
+                    // Cap to avoid too many markers (reuse outer maxMarkers)
+                    if (kMaxAdj - kMinAdj + 1 > maxMarkers) {
+                        const centerK = Math.round((t0) / twoPi);
+                        kMinAdj = centerK - Math.floor(maxMarkers / 2);
+                        kMaxAdj = kMinAdj + maxMarkers - 1;
+                    }
+
+                    for (let k = kMinAdj; k <= kMaxAdj; k++) {
+                        const tK = t0 + k * twoPi;
+                        try {
+                            // evaluate with both t and x set to angle (consistent with sampling)
+                            this.evaluator.evaluate(this.ast, { t: tK, x: tK });
+                        } catch (e) {
+                            // ignore evaluation errors for individual markers
+                            continue;
+                        }
+                        // For each visible variable, draw marker if value is finite
+                        for (const [varName, config] of this.visiblePlotInfo) {
+                            const v = this.evaluator.vm.globals.get(varName);
+                            if (typeof v === 'number' && isFinite(v)) {
+                                const worldPX = v * Math.cos(tK);
+                                const worldPY = v * Math.sin(tK);
+                                const sx = this.toScreenX(worldPX);
+                                const sy = this.toScreenY(worldPY);
+                                // draw filled highlight with stroke
+                                ctx.beginPath();
+                                ctx.fillStyle = (config && config.color) || '#fff';
+                                ctx.arc(sx, sy, 5, 0, Math.PI * 2);
+                                ctx.fill();
+                                ctx.lineWidth = 1;
+                                ctx.strokeStyle = '#00000066';
+                                ctx.stroke();
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // protect drawing from unexpected errors
+                    console.error('Error drawing 2π markers', e);
+                }
+            }
+            ctx.setLineDash([]);
+            // Compute angle t relative to center (radians) using world coordinates
+            const worldAtCursorX = this.toWorldX(screenX);
+            const worldAtCursorY = this.toWorldY(screenY);
+            const angle = Math.atan2(worldAtCursorY, worldAtCursorX);
+            // store for use below
+            this._hoverAngle = angle;
+        } else {
+            ctx.moveTo(screenX, 0);
+            ctx.lineTo(screenX, this.canvas.height);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            this._hoverAngle = null;
+        }
+
+        // Build tooltip content: first show x or t, then values.
+        const tooltipItems = [];
+        if (this.polarMode) {
+            const tCur = (typeof this._hoverAngle === 'number') ? this._hoverAngle : Math.atan2(this.toWorldY(screenY), this.toWorldX(screenX));
+            tooltipItems.push({ kind: 'header', text: `t: ${tCur.toPrecision(6)} (rad)` });
+
+            // Show values at t = t0 + k*2π within polarMin..polarMax (base at mouse angle)
+            const pMin = Math.min(this.polarMin, this.polarMax);
+            const pMax = Math.max(this.polarMin, this.polarMax);
+            const twoPi = 2 * Math.PI;
+            const t0 = (typeof this._hoverAngle === 'number') ? this._hoverAngle : Math.atan2(this.toWorldY(screenY), this.toWorldX(screenX));
+            let kMinAdj = Math.ceil((pMin - t0) / twoPi);
+            let kMaxAdj = Math.floor((pMax - t0) / twoPi);
+            // Cap count to avoid huge tooltips
+            const maxCount = 50;
+            if (kMaxAdj - kMinAdj + 1 > maxCount) {
+                const centerK = Math.round(t0 / twoPi);
+                kMinAdj = centerK - Math.floor(maxCount/2);
+                kMaxAdj = kMinAdj + maxCount - 1;
+            }
+
+            for (let k = kMinAdj; k <= kMaxAdj; k++) {
+                const tK = t0 + k * twoPi;
+                try {
+                    this.evaluator.evaluate(this.ast, { t: tK, x: tK });
+                } catch (e) {
+                    // ignore
+                }
+                // Debug: print globals for this tK to help diagnose incorrect values
+                try {
+                    if (console && console.debug) {
+                        const entries = Array.from(this.evaluator.vm.globals.entries()).slice(0,50);
+                        console.debug(`[Plotter] hover polar tK=${tK.toPrecision(6)} globals:`, entries);
+                    }
+                } catch (e) {}
+                // Build values line for this tK across visible variables
+                const parts = [];
+                for (const [name, cfg] of this.visiblePlotInfo) {
+                    const val = this.evaluator.vm.globals.get(name);
+                    const s = (typeof val === 'number' && isFinite(val)) ? val.toPrecision(6) : '—';
+                    parts.push(`${name}: ${s}`);
+                }
+                tooltipItems.push({ kind: 'line', text: `t=${(tK/Math.PI).toFixed(2)}π (${tK.toPrecision(6)}): ${parts.join(', ')}` });
+            }
+        } else {
+            // Cartesian: show x then single evaluation at worldX
+            tooltipItems.push({ kind: 'header', text: `x: ${worldX.toPrecision(6)}` });
+            try {
+                this.evaluator.evaluate(this.ast, { x: worldX });
+            } catch (e) {}
+            const parts = [];
+            for (const [name, cfg] of this.visiblePlotInfo) {
+                const val = this.evaluator.vm.globals.get(name);
+                const s = (typeof val === 'number' && isFinite(val)) ? val.toPrecision(6) : '—';
+                parts.push({ name, text: `${name}: ${s}`, color: cfg.color });
+            }
+            // If no visible variables, bail
+            if (this.visiblePlotInfo.size === 0) { ctx.restore(); return; }
+            tooltipItems.push({ kind: 'vars', items: parts });
+        }
+
+        // Draw small marker for each visible variable at the hover position
+        ctx.lineWidth = 1;
+        let originX = null, originY = null, hoverAngle = this._hoverAngle;
+        if (this.polarMode) {
+            originX = this.toScreenX(0);
+            originY = this.toScreenY(0);
+            if (typeof hoverAngle !== 'number') {
+                const worldAtCursorX = this.toWorldX(screenX);
+                const worldAtCursorY = this.toWorldY(screenY);
+                hoverAngle = Math.atan2(worldAtCursorY, worldAtCursorX);
+            }
+        }
+        // Evaluate current hover values (single t or x) for markers
+        const hoverValues = [];
+        if (this.polarMode) {
+            const tCur = (typeof this._hoverAngle === 'number') ? this._hoverAngle : Math.atan2(this.toWorldY(screenY), this.toWorldX(screenX));
+            try { this.evaluator.evaluate(this.ast, { t: tCur, x: tCur }); } catch (e) {}
+            for (const [name, cfg] of this.visiblePlotInfo) {
+                const val = this.evaluator.vm.globals.get(name);
+                hoverValues.push({ name, val, color: cfg.color });
+            }
+        } else {
+            try { this.evaluator.evaluate(this.ast, { x: worldX }); } catch (e) {}
+            for (const [name, cfg] of this.visiblePlotInfo) {
+                const val = this.evaluator.vm.globals.get(name);
+                hoverValues.push({ name, val, color: cfg.color });
+            }
+        }
+
+        for (const item of hoverValues) {
+            ctx.fillStyle = item.color || '#fff';
+            if (this.polarMode && typeof item.val === 'number') {
+                const r = item.val;
+                const worldPX = r * Math.cos(hoverAngle);
+                const worldPY = r * Math.sin(hoverAngle);
+                const sx = this.toScreenX(worldPX);
+                const sy = this.toScreenY(worldPY);
+                ctx.beginPath();
+                ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#00000033';
+                ctx.stroke();
+            } else if (!this.polarMode && typeof item.val === 'number') {
+                const sy = this.toScreenY(item.val);
+                ctx.beginPath();
+                ctx.arc(screenX, sy, 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#00000033';
+                ctx.stroke();
+            }
+        }
+
+        // Tooltip box near mouse based on tooltipItems
+        const padding = 6;
+        ctx.font = '12px sans-serif';
+        let maxW = 0;
+        let lineCount = 0;
+        for (const it of tooltipItems) {
+            if (it.kind === 'header' || it.kind === 'line') {
+                const w = ctx.measureText(it.text).width;
+                if (w > maxW) maxW = w;
+                lineCount += 1;
+            } else if (it.kind === 'vars') {
+                for (const v of it.items) {
+                    const w = ctx.measureText(v.text).width + 24; // include swatch
+                    if (w > maxW) maxW = w;
+                    lineCount += 1;
+                }
+            }
+        }
+
+        if (lineCount === 0) { ctx.restore(); return; }
+
+        const boxW = Math.min(this.canvas.width - 16, maxW + padding * 2);
+        const boxH = lineCount * 16 + padding * 2;
+
+        // Prefer drawing box to the right of cursor if space permits
+        let boxX = screenX + 12;
+        if (boxX + boxW > this.canvas.width) boxX = screenX - 12 - boxW;
+        let boxY = Math.max(8, screenY - boxH / 2);
+        if (boxY + boxH > this.canvas.height - 8) boxY = this.canvas.height - 8 - boxH;
+
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(boxX, boxY, boxW, boxH);
+
+        // Draw each tooltip item
+        let y = boxY + padding + 12;
+        for (const it of tooltipItems) {
+            if (it.kind === 'header') {
+                ctx.fillStyle = '#fff';
+                ctx.fillText(it.text, boxX + 8, y - 1);
+                y += 16;
+            } else if (it.kind === 'line') {
+                ctx.fillStyle = '#ccc';
+                ctx.fillText(it.text, boxX + 8, y - 1);
+                y += 16;
+            } else if (it.kind === 'vars') {
+                for (const v of it.items) {
+                    // color swatch
+                    ctx.fillStyle = v.color || '#fff';
+                    ctx.fillRect(boxX + 4, y - 10, 10, 10);
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(v.text, boxX + 20, y - 1);
+                    y += 16;
+                }
+            }
+        }
+
+        ctx.restore();
     }
 
     drawPlots() {
@@ -370,6 +653,9 @@ export class Plotter {
         // So strict mode logic is already sound.
         // --- NEW END ---
 
+        // expose visible variables for hover rendering
+        this.visiblePlotInfo = new Map(targetVariables);
+
         for (const [varName, config] of targetVariables) {
             ctx.beginPath();
             
@@ -489,6 +775,8 @@ export class Plotter {
             }
             ctx.stroke();
         }
+        // After drawing plots, draw hover overlay if active
+        // (Note: draw() will call _drawHover after drawPlots)
     }
     
     drawGrid() {
