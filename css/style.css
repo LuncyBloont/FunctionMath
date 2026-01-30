@@ -1,0 +1,246 @@
+body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #1e1e1e; /* Dark theme background */
+}
+
+canvas#plotCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background-color: #1e1e1e;
+}
+
+.draggable-panel {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    width: 350px;
+    background-color: rgba(37, 37, 38, 0.95);
+    border: 1px solid #454545;
+    border-radius: 4px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    color: #cccccc;
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-header {
+    padding: 8px 12px;
+    background-color: #333333;
+    cursor: move; /* Indicates draggable */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #454545;
+    user-select: none;
+}
+
+.panel-header span {
+    font-weight: 600;
+}
+
+.error-log {
+    margin: 8px 12px 12px 12px;
+    padding: 8px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.04);
+    color: #ffd1d1;
+    font-size: 12px;
+    max-height: 120px;
+    overflow: auto;
+    white-space: pre-wrap;
+}
+.panel-header button {
+    background: none;
+    border: none;
+    color: #cccccc;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.panel-content {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+    max-height: 500px; /* Arbitrary large enough value */
+    opacity: 1;
+    overflow: hidden;
+}
+
+.draggable-panel.minimized .panel-content {
+    max-height: 0;
+    opacity: 0;
+    padding: 0 10px; /* Keep horizontal padding to maintain width if needed, or 0 */
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+textarea#formulaInput {
+    width: 100%;
+    height: 200px;
+    background-color: #1e1e1e;
+    color: #dcdcdc;
+    border: 1px solid #3c3c3c;
+    padding: 8px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 14px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+textarea#formulaInput:focus {
+    outline: 1px solid #007acc;
+    border-color: #007acc;
+}
+
+.button-group {
+    display: flex;
+    gap: 10px;
+}
+.button-group {
+    display: flex;
+    gap: 10px;
+}
+
+button {
+    flex: 1;
+    padding: 8px;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    background-color: #0e639c;
+}
+
+.button-primary {
+    background-color: #0e639c;
+}
+.button-primary:hover {
+    background-color: #1177bb;
+}
+
+.button-secondary {
+    background-color: #444;
+    color: #ddd;
+}
+.button-secondary:hover {
+    background-color: #555;
+}
+
+.inline-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 2px;
+}
+.control-inline {
+    font-size: 12px;
+    color: #bbb;
+}
+/* Polar controls: stack each parameter on its own row */
+.polar-controls .control-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+.polar-controls .control-row label {
+    flex: 0 0 45%;
+    font-size: 13px;
+    color: #ddd;
+}
+.polar-controls .control-row input {
+    flex: 1 0 55%;
+    padding: 4px 6px;
+    border-radius: 3px;
+    border: 1px solid #444;
+    background: #1e1e1e;
+    color: #ddd;
+}
+/* Cartesian controls share the same layout */
+.cartesian-controls .control-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+.cartesian-controls .control-row label {
+    flex: 0 0 45%;
+    font-size: 13px;
+    color: #ddd;
+}
+.cartesian-controls .control-row input {
+    flex: 1 0 55%;
+    padding: 4px 6px;
+    border-radius: 3px;
+    border: 1px solid #444;
+    background: #1e1e1e;
+    color: #ddd;
+}
+/* Right-align numeric inputs */
+.polar-controls .control-row input,
+.cartesian-controls .control-row input {
+    text-align: right;
+    box-sizing: border-box;
+    max-width: 100%;
+    margin-right: 6px;
+}
+
+/* Ensure controls container has inner right padding so inputs don't touch panel edge */
+.polar-controls, .cartesian-controls {
+    padding-right: 8px;
+}
+
+/* Limit input width so it doesn't expand fully to the container edge when flexing */
+.polar-controls .control-row input,
+.cartesian-controls .control-row input {
+    max-width: calc(55% - 8px);
+}
+
+button:hover {
+    background-color: #1177bb;
+}
+
+button#clearBtn {
+    background-color: #444;
+}
+
+/* Unified scrollbar styling for WebKit and Chromium */
+.error-log::-webkit-scrollbar,
+textarea::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+}
+.error-log::-webkit-scrollbar-thumb,
+textarea::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.08);
+    border-radius: 4px;
+}
+.error-log::-webkit-scrollbar-track,
+textarea::-webkit-scrollbar-track {
+    background: rgba(255,255,255,0.02);
+}
+
+/* Firefox scrollbar */
+textarea, .error-log {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.08) rgba(255,255,255,0.02);
+}
+
+button#clearBtn:hover {
+    background-color: #555;
+}
+
+.help-text {
+    font-size: 11px;
+    color: #888;
+    margin-top: 5px;
+}
