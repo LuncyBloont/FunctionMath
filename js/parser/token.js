@@ -6,7 +6,7 @@ export const TokenType = {
     MINUS: 'MINUS',
     MULTIPLY: 'MULTIPLY',
     DIVIDE: 'DIVIDE',
-    POWER: 'POWER',
+    XOR: 'XOR',
     MODULO: 'MODULO',
     LPAREN: 'LPAREN',
     RPAREN: 'RPAREN',

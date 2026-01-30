@@ -4,7 +4,8 @@ export const OpCode = {
     SUB: 'SUB',           // Pop a, b; Push a - b
     MUL: 'MUL',           // Pop a, b; Push a * b
     DIV: 'DIV',           // Pop a, b; Push a / b
-    POW: 'POW',           // Pop a, b; Push a ^ b
+    POW: 'POW',           // Pop a, b; Push a ^ b (deprecated - use pow() builtin for exponent)
+    XOR: 'XOR',           // Pop a, b; Push a ^ b (bitwise XOR)
     MOD: 'MOD',           // Pop a, b; Push a % b
     NEG: 'NEG',           // Pop a; Push -a
     LOAD: 'LOAD',         // Push variable value

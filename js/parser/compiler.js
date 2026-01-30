@@ -80,7 +80,7 @@ export class Compiler {
                     case TokenType.MINUS: this.emit(OpCode.SUB); break;
                     case TokenType.MULTIPLY: this.emit(OpCode.MUL); break;
                     case TokenType.DIVIDE: this.emit(OpCode.DIV); break;
-                    case TokenType.POWER: this.emit(OpCode.POW); break;
+                    case TokenType.XOR: this.emit(OpCode.XOR); break;
                     case TokenType.MODULO: this.emit(OpCode.MOD); break;
                     case TokenType.EQUAL: this.emit(OpCode.EQ); break;
                     case TokenType.NOT_EQUAL: this.emit(OpCode.NEQ); break;

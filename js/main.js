@@ -14,6 +14,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearBtn = document.getElementById('clearBtn');
     const rangePanel = document.getElementById('controlPanel');
     const toggleBtn = document.getElementById('togglePanelBtn');
+    // SVG icons for the toggle button: minimize (bar) and restore (overlapping squares)
+    const minimizeSvg = '<svg viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">'
+        + '<rect x="2" y="7.2" width="8" height="1.2" rx="0.6" fill="currentColor" />'
+        + '</svg>';
+    const restoreSvg = '<svg viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">'
+        + '<rect x="3.2" y="2.2" width="6.6" height="6.6" rx="0.8" fill="currentColor" />'
+        + '<rect x="2" y="3.6" width="6.6" height="6.6" rx="0.8" fill="currentColor" opacity="0.95" />'
+        + '</svg>';
+    // Ensure initial icon content is the minimize icon (keeps compatibility with static HTML)
+    if (toggleBtn && !toggleBtn.innerHTML.trim()) toggleBtn.innerHTML = minimizeSvg;
     const polarToggle = document.getElementById('polarToggle');
     const polarControls = document.getElementById('polarControls');
     const cartesianControls = document.getElementById('cartesianControls');
@@ -29,6 +39,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const panelHeader = rangePanel.querySelector('.panel-header');
     
     panelHeader.addEventListener('mousedown', (e) => {
+        // Don't start dragging when interacting with header controls (buttons)
+        if (e.target.closest && e.target.closest('.window-controls')) return;
         isPanelDragging = true;
         panelOffsetX = e.clientX - rangePanel.offsetLeft;
         panelOffsetY = e.clientY - rangePanel.offsetTop;
@@ -43,10 +55,22 @@ document.addEventListener('DOMContentLoaded', () => {
     
     document.addEventListener('mouseup', () => isPanelDragging = false);
 
-    // Toggle Panel
+    // Toggle Panel (preserve SVG in button; use classes/aria for state)
     toggleBtn.addEventListener('click', () => {
         rangePanel.classList.toggle('minimized');
-        toggleBtn.textContent = rangePanel.classList.contains('minimized') ? '□' : '_';
+        const minimized = rangePanel.classList.contains('minimized');
+        // Update button appearance and accessible info without replacing the element
+        if (minimized) {
+            toggleBtn.classList.add('minimized');
+            toggleBtn.setAttribute('aria-pressed', 'true');
+            toggleBtn.title = 'Restore panel';
+            toggleBtn.innerHTML = restoreSvg;
+        } else {
+            toggleBtn.classList.remove('minimized');
+            toggleBtn.setAttribute('aria-pressed', 'false');
+            toggleBtn.title = 'Minimize panel';
+            toggleBtn.innerHTML = minimizeSvg;
+        }
     });
 
 

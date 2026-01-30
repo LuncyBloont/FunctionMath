@@ -180,7 +180,7 @@ export class Parser {
     power() {
         let expr = this.primary();
         
-        while (this.match(TokenType.POWER)) {
+        while (this.match(TokenType.XOR)) {
             const operator = this.previous().type;
             const right = this.unary();
             expr = { type: 'Binary', operator, left: expr, right };

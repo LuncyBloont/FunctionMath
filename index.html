@@ -13,7 +13,13 @@
     <div id="controlPanel" class="draggable-panel">
         <div class="panel-header">
             <span>Function Input</span>
-            <button id="togglePanelBtn">_</button>
+            <div class="window-controls" role="toolbar" aria-label="Window controls">
+                <button id="togglePanelBtn" class="window-btn window-minimize" title="Minimize panel" aria-label="Minimize panel">
+                    <svg viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+                        <rect x="2" y="7.2" width="8" height="1.2" rx="0.6" fill="currentColor" />
+                    </svg>
+                </button>
+            </div>
         </div>
         <div class="panel-content">
             <textarea id="formulaInput" spellcheck="false" placeholder="// Enter formula script here...

@@ -18,7 +18,8 @@ export class Lexer {
                 continue;
             }
 
-            if (/[0-9]/.test(char) || (char === '.' && /[0-9]/.test(this.peek()))) {
+            const _peek = this.peek();
+            if (/[0-9]/.test(char) || (char === '.' && _peek && /[0-9]/.test(_peek))) {
                 this.tokens.push(this.readNumber());
                 continue;
             }
@@ -45,7 +46,7 @@ export class Lexer {
                 case '-': this.addToken(TokenType.MINUS, '-'); break;
                 case '*': this.addToken(TokenType.MULTIPLY, '*'); break;
                 case '/': this.addToken(TokenType.DIVIDE, '/'); break;
-                case '^': this.addToken(TokenType.POWER, '^'); break;
+                case '^': this.addToken(TokenType.XOR, '^'); break;
                 case '%': this.addToken(TokenType.MODULO, '%'); break;
                 case '(': this.addToken(TokenType.LPAREN, '('); break;
                 case ')': this.addToken(TokenType.RPAREN, ')'); break;
@@ -130,7 +131,6 @@ export class Lexer {
         let start = this.pos;
         let startCol = this.column;
         let hasDot = false;
-
         while (this.pos < this.input.length) {
             const char = this.input[this.pos];
             if (/[0-9]/.test(char)) {
@@ -141,6 +141,14 @@ export class Lexer {
             } else {
                 break;
             }
+        }
+
+        // Support scientific notation: e or E followed by optional +/-, then digits
+        const rest = this.input.substring(this.pos);
+        const expMatch = rest.match(/^[eE][+-]?[0-9]+/);
+        if (expMatch) {
+            // consume exponent characters
+            for (let i = 0; i < expMatch[0].length; i++) this.advance();
         }
 
         const value = this.input.substring(start, this.pos);

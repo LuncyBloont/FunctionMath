@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "scripts": {
+    "test": "node js/tests/run_all_tests.mjs"
+  }
+}

@@ -4,6 +4,7 @@ export class VM {
     constructor() {
         this.stack = [];
         this.globals = new Map();
+        this.debug = false; // toggle to enable internal logs
         this.builtins = {
             'sin': Math.sin,
             'cos': Math.cos,
@@ -47,7 +48,7 @@ export class VM {
     }
 
     reset() {
-        console.log("[VM] Resetting state (clearing globals)");
+        if (this.debug) console.log("[VM] Resetting state (clearing globals)");
         this.globals.clear();
         this.stack = [];
     }
@@ -97,6 +98,15 @@ export class VM {
                     const b = this.stack.pop();
                     const a = this.stack.pop();
                     this.stack.push(Math.pow(a, b));
+                    break;
+                }
+                case OpCode.XOR: {
+                    const b = this.stack.pop();
+                    const a = this.stack.pop();
+                    // Perform 32-bit integer XOR semantics; convert operands to int32
+                    const ai = a | 0;
+                    const bi = b | 0;
+                    this.stack.push((ai ^ bi));
                     break;
                 }
                 case OpCode.MOD: {
