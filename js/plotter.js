@@ -19,7 +19,7 @@ export class Plotter {
         // Polar sampling defaults
         this.polarMin = -31.4159;
         this.polarMax = 31.4159;
-        this.polarStep = 0.00314159;
+        this.polarStep = 0.01;
         // Continuity / threshold settings
         this.continuityEps = 1e-8; // protect against tiny denominator
         this.continuityThresholdCartesian = 100.0; // default |Δy/Δx| threshold

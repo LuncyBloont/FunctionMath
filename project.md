@@ -77,6 +77,31 @@ The project follows a standard static web layout:
     - **Strict Mode**: If *any* marker is present, **only** marked variables are drawn.
     - **Fallback Mode**: If *no* markers are present, the variable named `y` is drawn in white.
 
+### HLSL Compatibility
+
+Goal:尽可能兼容 HLSL 语法，以便在手工移除类型声明、未支持的函数与复杂流控制后，能够直接解析和运行小段 HLSL 代码。
+
+- HLSL 语义差异示例：在 HLSL 中 `^` 是按位异或（bitwise XOR），**不是**幂运算。HLSL 中的幂使用内置函数 `pow(x, y)`。
+- 建议：为了与 HLSL 保持一致，**将 `^` 视作按位异或**（并在需要时在 VM 中将数值转换为 32 位整数后进行 XOR 运算），并把幂运算保留为 `pow()` 函数调用。这样可以更可靠地解析 HLSL 片段并降低意外语义差异。
+- 迁移/解析建议：当尝试直接解析 HLSL 代码片段时，手工或脚本化地做以下处理会提高兼容性：
+    - 移除类型声明（如 `float`, `int` 等）和语义修饰符（`in`, `out`, `uniform` 等）。
+    - 删除或替换引擎不支持的系统函数或 shader-specific 特性（如纹理采样函数），或把它们映射到等价的占位函数。
+    - 将 HLSL 的幂写法（如果原代码使用 `^` 误作幂）改为显式 `pow(a,b)`。
+    - 去除复杂的流控制或将其拆分为较小的片段以便逐句验证。
+
+- 实现注意事项（如果采纳 `^` 为 XOR）：
+    - 词法器 `^` token 应映射为 `XOR`（而非 `POWER`）。
+    - 编译器需要生成 `XOR` 指令，VM 在执行时对操作数应用 32 位整数转换（例如 `a|0 ^ b|0`）再返回数值结果（以浮点形式或整数形式视需求）。
+    - 文档与测试需更新以反映该语义，并提供示例（例如 `a = 5 ^ 2` 应得到 `7` 而非 `25`）。
+
+- 如果保持当前实现（将 `^` 作为幂运算），请在文档中明确声明这一点并建议 HLSL 用户使用 `pow()` 来避免歧义。
+
+我可以按你的偏好做两件事之一：
+- 将引擎修改为 HLSL 风格（`^` → XOR，新增 `XOR` 指令并在 VM 中实现），并把相关测试和文档更新为一致；或
+- 在文档中明确声明当前语法（`^` 为幂运算）并向 HLSL 用户提供迁移建议（推荐使用 `pow()`）。
+
+请选择你更倾向的方案，我将实施对应变更并更新测试与文档。
+
 ### 4.5. Engine Architecture (VM & Compiler)
 The core logic must be decoupled from JavaScript idioms to allow future C++ porting.
 
@@ -129,6 +154,10 @@ Use `requestAnimationFrame` for the rendering loop if implementing smooth intera
     - Convert world y to screen y.
     - Draw line segments.
 
+## 6. Revision History
+
+- 2026-01-30：完善视觉标记、严格/回退模式、VM状态管理、AST遍历修正等内容，详见 `project_doc/`.
+
 ## 6. Recent Fixes & Debugging Notes
 
 - 2026-01-29: Fixed multiple issues discovered during debugging:
@@ -165,6 +194,22 @@ Example:
 
 - `r = sin(x) @` will draw a polar curve when `Polar Mode` is enabled (here `x` is treated as radians).
 
+Updated behavior (2026-01-30):
+
+- Sampling: the plotter samples angles from `polarMin` to `polarMax` using `polarStep` as the user-visible sampling interval. The default `polarStep` is `0.01`. For performance the renderer may *coarsen* sampling (increase step) when the full interval would produce an excessive number of samples, but it will not automatically sample *finer* than the user-specified `polarStep`. This maintains the semantic meaning of the configured `t` interval while avoiding freezes on extremely large ranges.
+
+- Continuity detection: the renderer no longer uses a pixel-distance heuristic to decide where to break paths. Continuity is determined by slope in the parameter direction:
+    - Cartesian mode: use `|Δy/Δx|` to decide breaks (configurable threshold).
+    - Polar mode: use normalized angular difference `dt` (wrapped to `[-π, π]`) and `|Δr/Δt|` to decide breaks (configurable threshold).
+    - A small `eps` protects against division by very small `Δx`/`Δt`.
+
+- UI / Controls: the control panel exposes per-line inputs for `Angle Min`, `Angle Max`, and `Angle Step` (polar). Additionally two numeric inputs let the user configure continuity thresholds:
+    - `Continuity |Δy/Δx| Threshold` (used in Cartesian mode)
+    - `Continuity |Δr/Δt| Threshold` (used in Polar mode)
+    The Cartesian continuity control is shown only when Polar Mode is disabled; labels are associated with their inputs for accessibility and numeric fields are right-aligned.
+
+- Pixel thresholds removed: the slope-based criteria are the primary determinant for path breaks. If visual tuning is required, adjust the continuity thresholds via the UI or reduce `polarStep` to increase sampling density in a region.
+
 ## 7. How to Debug / Toggle Verbose Output
 
 - The codebase currently emits helpful debug logs for AST traversal and marker detection. To temporarily enable or disable verbose logs, edit `plotter.js` and look for `console.log` lines prefixed with `>>> [Plotter]`.
@@ -178,6 +223,37 @@ Example:
 
 - Consider adding a runtime toggle (UI checkbox) to enable verbose debugging without editing source files.
 - Add unit tests for parser marker extraction and VM statelessness.
+
+## 10. Tests
+
+This repository includes a small test-suite for core engine modules (lexer, parser, compiler, evaluator/VM).
+
+- Location: `js/tests/`
+- Runner: `node js/tests/run_all_tests.mjs` (or `npm test` after installing node and running `npm test`)
+
+Included tests:
+- `run_tests.mjs` - numeric parsing tests (includes scientific notation checks).
+- `parser_tests.mjs` - parser marker and AST checks.
+- `evaluator_tests.mjs` - compile & execute correctness and VM statelessness checks.
+- `control_flow_tests.mjs` - `if`/`else` and `for` loop behavior.
+- `error_tests.mjs` - syntax error detection, unknown function runtime errors, undefined variable runtime errors.
+- `undefined_tests.mjs` - explicit tests where user inputs / variables are undefined.
+
+Notes:
+- The project uses ESM modules; `package.json` sets `type: "module"` and provides a `test` script.
+- Run all tests with:
+
+```bash
+node js/tests/run_all_tests.mjs
+```
+
+or
+
+```bash
+npm test
+```
+
+If you'd like, I can convert these into a proper test framework (`uvu`/`mocha`) and add CI integration.
 
 ### 5.3 Error Handling
 - Never let the application crash due to a syntax error in the function string.
