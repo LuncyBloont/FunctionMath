@@ -2,6 +2,8 @@
 
 FunctionMath is a small JavaScript project that implements a math expression parser, compiler, evaluator, and a simple plotter UI for visualizing functions.
 
+### Online use --> [GO](https://luncybloont.github.io/FunctionMath/)
+
 **Requirements**
 - Node.js (14+)
 - (Optional) Python for the simple server (`server.py`)
