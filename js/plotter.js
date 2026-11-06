@@ -547,9 +547,11 @@ export class Plotter {
         };
         const sample = (parameter, sx) => {
             const values = new Map();
+            let evaluationSucceeded = false;
             try {
                 const context = this.polarMode ? { t: parameter, x: parameter } : { x: parameter };
                 this.evaluator.evaluate(this.ast, context);
+                evaluationSucceeded = true;
                 for (const [name, val] of this.evaluator.vm.globals) {
                     if (typeof val === 'number' && Number.isFinite(val)) {
                         values.set(name, val);
@@ -559,7 +561,7 @@ export class Plotter {
             } catch (e) {
                 if (this.lastErrors.length < 10) this.lastErrors.push({ x: parameter, message: e.message || String(e) });
             }
-            return { sx, angle: parameter, values };
+            return { sx, angle: parameter, values, evaluationSucceeded };
         };
 
         if (this.polarMode) {
@@ -595,39 +597,50 @@ export class Plotter {
                 const y = this.toScreenY(value);
                 return Number.isFinite(value) && y >= 0 && y <= height;
             };
-            let previous = sample(this.toWorldX(0), 0);
-            dataPoints.push(previous);
-            for (let screenX = pixelStep; screenX <= width; screenX += pixelStep) {
-                const next = sample(this.toWorldX(screenX), screenX);
-                if (names.some(name => !visible(previous, name) || !visible(next, name))) {
-                    const refined = [previous, next];
-                    if (names.some(name => !visible(previous, name) && !visible(next, name))) {
-                        for (let i = 1; i <= 8; i++) {
-                            const sx = screenX - pixelStep + pixelStep * i / 9;
-                            refined.push(sample(this.toWorldX(sx), sx));
-                        }
-                    } else {
-                        for (let i = 0; i < 8; i++) {
-                            let index = -1;
-                            let largest = 0;
-                            for (let j = 0; j + 1 < refined.length; j++) {
-                                const left = refined[j], right = refined[j + 1];
-                                if (right.sx - left.sx > largest &&
-                                    names.some(name => visible(left, name) !== visible(right, name))) {
-                                    largest = right.sx - left.sx;
-                                    index = j;
-                                }
-                            }
-                            if (index < 0) break;
-                            const sx = (refined[index].sx + refined[index + 1].sx) / 2;
-                            refined.splice(index + 1, 0, sample(this.toWorldX(sx), sx));
-                        }
-                    }
-                    refined.sort((a, b) => a.sx - b.sx);
-                    dataPoints.push(...refined.slice(1, -1));
+            const sampleCache = new Map();
+            const sampleAtScreenX = screenX => {
+                const key = Math.round(screenX * 8);
+                if (!sampleCache.has(key)) {
+                    sampleCache.set(key, sample(this.toWorldX(screenX), screenX));
                 }
-                dataPoints.push(next);
-                previous = next;
+                return sampleCache.get(key);
+            };
+            const basePoints = [];
+            for (let screenX = 0; screenX <= width; screenX += pixelStep) {
+                basePoints.push(sampleAtScreenX(screenX));
+            }
+
+            const visiblePrefix = [0];
+            for (const point of basePoints) {
+                visiblePrefix.push(visiblePrefix[visiblePrefix.length - 1] +
+                    (names.some(name => visible(point, name)) ? 1 : 0));
+            }
+
+            const refinementOffsets = [0.5, 0.25, 0.75, 0.125, 0.625, 0.375, 0.875];
+            const refinements = Array.from({ length: basePoints.length }, () => []);
+            for (let i = 1; i < basePoints.length; i++) {
+                const previous = basePoints[i - 1];
+                const next = basePoints[i];
+                if (!names.some(name => !visible(previous, name) || !visible(next, name))) continue;
+
+                const firstNearbyPixel = Math.max(0, i - 4);
+                const lastNearbyPixel = Math.min(basePoints.length - 1, i + 4);
+                const nearbyHasVisibleSample =
+                    visiblePrefix[lastNearbyPixel + 1] - visiblePrefix[firstNearbyPixel] > 0;
+                if (!nearbyHasVisibleSample) continue;
+
+                for (const offset of refinementOffsets) {
+                    const screenX = previous.sx + offset * pixelStep;
+                    const refined = sampleAtScreenX(screenX);
+                    refinements[i].push(refined);
+                    if (refined.evaluationSucceeded &&
+                        names.some(name => Number.isFinite(refined.values.get(name)))) break;
+                }
+            }
+
+            for (let i = 0; i < basePoints.length; i++) {
+                dataPoints.push(basePoints[i]);
+                if (i + 1 < basePoints.length) dataPoints.push(...refinements[i + 1]);
             }
         }
         this.evaluator.vm.markerHandler = null;

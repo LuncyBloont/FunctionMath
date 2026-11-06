@@ -50,9 +50,12 @@ Horizontal intersections and polar intersections are found numerically in the
 sampled domain. Closely spaced intersections or isolated points can be missed;
 a curve coincident with the requested line has infinitely many intersections
 and is represented by its sampled endpoints. Cartesian plots sample at one
-pixel and add up to eight samples inside intervals touching invalid or
-off-screen values. This improves boundary rendering but cannot guarantee
-detection of arbitrarily narrow domains.
+pixel and subdivide intervals touching invalid or off-screen values only when
+a drawable base sample exists within four pixels. Subdivision probes the seven
+offsets `0.5, 0.25, 0.75, 0.125, 0.625, 0.375, 0.875` in order, stopping at
+the first finite curve value. Sample results, including failed evaluations,
+are cached. Narrow domains with no drawable base sample within four pixels can
+be missed.
 
 **Tests**
 - Run the npm test script:
