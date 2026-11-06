@@ -204,8 +204,14 @@ export class VM {
                      const args = [];
                      for (let i = 0; i < arity; i++) args.push(this.stack.pop());
                      args.reverse();
-                     
-                     if (this.builtins[name]) {
+
+                     if (name === 'mark_x' || name === 'mark_y') {
+                         if (arity !== 1 || typeof args[0] !== 'number' || !Number.isFinite(args[0])) {
+                             throw new Error(`${name} requires one finite number`);
+                         }
+                         if (this.markerHandler) this.markerHandler(name, args[0]);
+                         this.stack.push(args[0]);
+                     } else if (this.builtins[name]) {
                          const result = this.builtins[name](...args);
                          this.stack.push(result);
                      } else {

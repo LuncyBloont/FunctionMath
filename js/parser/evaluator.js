@@ -1,5 +1,5 @@
 import { Compiler } from './compiler.js?v=9';
-import { VM } from './vm.js?v=9';
+import { VM } from './vm.js?v=17';
 
 export class Evaluator {
     constructor() {

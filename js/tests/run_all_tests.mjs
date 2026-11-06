@@ -4,6 +4,7 @@ import { runControlFlowTests } from './control_flow_tests.mjs';
 import { runErrorTests } from './error_tests.mjs';
 import { runUndefinedInputTests } from './undefined_tests.mjs';
 import { runEdgeCaseTests } from './edge_cases_tests.mjs';
+import { runPlotterTests } from './plotter_tests.mjs';
 
 (async () => {
     try {
@@ -24,6 +25,9 @@ import { runEdgeCaseTests } from './edge_cases_tests.mjs';
 
         console.log('\nRunning edge case tests...');
         await runEdgeCaseTests();
+
+        console.log('\nRunning plotter tests...');
+        await runPlotterTests();
 
         console.log('\nAll module tests passed.');
         process.exit(0);

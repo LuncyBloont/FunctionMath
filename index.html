@@ -26,7 +26,8 @@
 // Examples:
 // y = sin(x) @
 // y2 = cos(x) #f00
-// if (x > 0) { y3 = x } else { y3 = -x } y3 $"></textarea>
+// if (x > 0) { y3 = x } else { y3 = -x } y3 $
+// mark_x(1); mark_y(0);"></textarea>
             <div class="button-group">
                 <button id="plotBtn" class="button-primary">Plot / Update</button>
                 <button id="clearBtn" class="button-secondary">Clear</button>
@@ -44,13 +45,13 @@
                 <div class="control-row"><label for="continuityPolar">Continuity |Δr/Δt| Threshold:</label><input id="continuityPolar" type="number" step="0.1" value="100"></div>
             </div>
             <div class="help-text">
-                Markers: @ (draw), $ (guide), #rgb (color)
+                Markers: @ (draw), $ (guide), #rgb (color). Use mark_x(1) or mark_y(0) for intersections.
             </div>
             <div id="errorLog" class="error-log" aria-live="polite"></div>
         </div>
     </div>
 
     <!-- Math Engine -->
-    <script type="module" src="js/main.js?v=16"></script>
+    <script type="module" src="js/main.js?v=17"></script>
 </body>
 </html>
