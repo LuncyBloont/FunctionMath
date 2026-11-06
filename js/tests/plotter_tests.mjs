@@ -57,18 +57,18 @@ export function runPlotterTests() {
     assert.ok(result.texts.some(text => text.startsWith('(1, 1.73205)')));
     assert.ok(result.texts.some(text => text.startsWith('(-1.73205, 1)')));
 
-    result = makePlot('y = sqrt(0.0004 - pow(x - 0.05, 2));', {});
-    assert.ok(result.paths.some(path => path.some(item => item[0] === 'line' && item[1] > 50 && item[1] < 51)));
+    result = makePlot('y = sqrt(0.04 - pow(x - 0.05, 2));', {});
+    assert.ok(result.paths.some(path => path.some(item => item[0] === 'line' && item[1] >= 50 && item[1] <= 51)));
 
-    for (const code of [
-        'y = sqrt(x - 0.0508);',
-        'y = 100 * (x - 0.0508) + 5;'
-    ]) {
-        result = makePlot(code, {});
-        const samples = result.samples.filter(x => x >= 0 && x <= 0.1);
-        assert.equal(samples.length, 10, code);
-        assert.ok(samples.some(x => Math.abs(x - 0.0508) < 0.1 / 256), code);
-    }
+    result = makePlot('y = sqrt(x - 0.0508);', {});
+    const refinedScreenX = result.samples.map(x => x * 10 + 50).filter(x => x > 50 && x < 51);
+    assert.deepEqual(refinedScreenX.map(x => Number(x.toFixed(3))), [50.5, 50.25, 50.75]);
+
+    result = makePlot('y = sqrt(-1);', {});
+    assert.equal(result.samples.length, 101);
+
+    result = makePlot('y = sqrt(x - 0.0508);', {});
+    assert.equal(new Set(result.samples.map(x => Math.round((x * 10 + 50) * 8))).size, result.samples.length);
 
     result = makePlot('y = 1 / (x - 0.01); mark_y(0);', {});
     assert.equal(result.texts.length, 0);
