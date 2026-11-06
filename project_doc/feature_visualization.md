@@ -13,6 +13,13 @@ The markers are suffix annotations added after a variable assignment.
 | `#hex` | **Color**: Sets the stroke color. Implicitly marks as **Draw**. | `y = x #f00` (Red) |
 | `$` | **Guide**: Draws the line as a dashed guide (helper) line. | `y = x $` |
 
+`mark_x(value)` and `mark_y(value)` annotate visible solid curves at their
+intersections with the requested Cartesian x or y coordinate. Labels show
+`(x, y)` and dashed segments connect each point to the axes. Guide curves are
+excluded. These functions work in Cartesian and polar modes; intersection
+searches are numerical, so arbitrarily close or isolated intersections are not
+guaranteed. See the README for sampling and marker limits.
+
 ## Plotting Behavior Modes
 
 The rendering engine operates in two distinct modes based on the presence of markers in the code.

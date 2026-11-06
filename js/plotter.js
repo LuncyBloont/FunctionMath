@@ -1,4 +1,4 @@
-import { Evaluator } from './parser/evaluator.js?v=9';
+import { Evaluator } from './parser/evaluator.js?v=17';
 
 export class Plotter {
     constructor(canvas) {
@@ -512,7 +512,7 @@ export class Plotter {
         const height = this.canvas.height;
         
         ctx.lineWidth = 2;
-        const pixelStep = 2; // Resolution step for Cartesian sampling (pixels)
+        const pixelStep = 1;
 
         // Compute average scale and maximum visible radius (world units)
         const avgScale = (this.scaleX + this.scaleY) / 2;
@@ -532,6 +532,35 @@ export class Plotter {
         // We store them as: [ { sx: number, values: Map<string, number> }, ... ]
         const dataPoints = [];
         const foundVariables = new Set(); // Track all 'y' variables encountered
+        const markers = { mark_x: new Set(), mark_y: new Set() };
+        let markerLimitReported = false;
+        this.evaluator.vm.markerHandler = (name, value) => {
+            if (markers[name].has(value)) return;
+            if (markers[name].size >= 100) {
+                if (!markerLimitReported && this.lastErrors.length < 10) {
+                    this.lastErrors.push({ x: value, message: 'At most 100 distinct values per marker function can be displayed.' });
+                    markerLimitReported = true;
+                }
+                return;
+            }
+            markers[name].add(value);
+        };
+        const sample = (parameter, sx) => {
+            const values = new Map();
+            try {
+                const context = this.polarMode ? { t: parameter, x: parameter } : { x: parameter };
+                this.evaluator.evaluate(this.ast, context);
+                for (const [name, val] of this.evaluator.vm.globals) {
+                    if (typeof val === 'number' && Number.isFinite(val)) {
+                        values.set(name, val);
+                        foundVariables.add(name);
+                    }
+                }
+            } catch (e) {
+                if (this.lastErrors.length < 10) this.lastErrors.push({ x: parameter, message: e.message || String(e) });
+            }
+            return { sx, angle: parameter, values };
+        };
 
         if (this.polarMode) {
             // Angle-uniform sampling (polar mode)
@@ -555,52 +584,53 @@ export class Plotter {
             const approxSamples = Math.ceil(Math.abs(aMax - aMin) / angleStep) || 1;
             if (approxSamples > maxSamples) angleStep = Math.abs(aMax - aMin) / maxSamples;
 
-            for (let angle = aMin; angle <= aMax; angle += angleStep) {
-                try {
-                    this.evaluator.evaluate(this.ast, { t: angle, x: angle });
-                    const currentVars = new Map();
-                    for (const [name, val] of this.evaluator.vm.globals) {
-                        if (typeof val === 'number' && isFinite(val)) {
-                            currentVars.set(name, val);
-                            foundVariables.add(name);
-                        }
-                    }
-                    if (currentVars.size > 0) {
-                        dataPoints.push({ sx: angle, angle: angle, values: currentVars });
-                    }
-                } catch (e) {
-                    if (!this.lastErrors) this.lastErrors = [];
-                    if (this.lastErrors.length < 10) this.lastErrors.push({ x: angle, message: e.message || String(e) });
-                }
+            for (let angle = aMin; angle < aMax; angle += angleStep) {
+                dataPoints.push(sample(angle, angle));
             }
+            if (aMax >= aMin) dataPoints.push(sample(aMax, aMax));
         } else {
-            // Cartesian: sample by screen X
-            for (let screenX = 0; screenX <= width; screenX += pixelStep) {
-                const worldX = this.toWorldX(screenX);
-                try {
-                    this.evaluator.evaluate(this.ast, { x: worldX });
-                    // Debug random sample
-                    if (screenX === Math.floor(width/2)) {
-                        console.log(`[Plotter] Sample x=${worldX} Globals:`, Array.from(this.evaluator.vm.globals.keys()));
-                    }
-
-                    const currentVars = new Map();
-                    for (const [name, val] of this.evaluator.vm.globals) {
-                        if (typeof val === 'number' && isFinite(val)) {
-                            currentVars.set(name, val);
-                            foundVariables.add(name);
+            const names = this.plotConfig.size ? [...this.plotConfig.keys()] : ['y'];
+            const visible = (point, name) => {
+                const value = point.values.get(name);
+                const y = this.toScreenY(value);
+                return Number.isFinite(value) && y >= 0 && y <= height;
+            };
+            let previous = sample(this.toWorldX(0), 0);
+            dataPoints.push(previous);
+            for (let screenX = pixelStep; screenX <= width; screenX += pixelStep) {
+                const next = sample(this.toWorldX(screenX), screenX);
+                if (names.some(name => !visible(previous, name) || !visible(next, name))) {
+                    const refined = [previous, next];
+                    if (names.some(name => !visible(previous, name) && !visible(next, name))) {
+                        for (let i = 1; i <= 8; i++) {
+                            const sx = screenX - pixelStep + pixelStep * i / 9;
+                            refined.push(sample(this.toWorldX(sx), sx));
+                        }
+                    } else {
+                        for (let i = 0; i < 8; i++) {
+                            let index = -1;
+                            let largest = 0;
+                            for (let j = 0; j + 1 < refined.length; j++) {
+                                const left = refined[j], right = refined[j + 1];
+                                if (right.sx - left.sx > largest &&
+                                    names.some(name => visible(left, name) !== visible(right, name))) {
+                                    largest = right.sx - left.sx;
+                                    index = j;
+                                }
+                            }
+                            if (index < 0) break;
+                            const sx = (refined[index].sx + refined[index + 1].sx) / 2;
+                            refined.splice(index + 1, 0, sample(this.toWorldX(sx), sx));
                         }
                     }
-
-                    if (currentVars.size > 0) {
-                        dataPoints.push({ sx: screenX, angle: worldX, values: currentVars });
-                    }
-                } catch (e) {
-                    if (!this.lastErrors) this.lastErrors = [];
-                    if (this.lastErrors.length < 10) this.lastErrors.push({ x: worldX, message: e.message || String(e) });
+                    refined.sort((a, b) => a.sx - b.sx);
+                    dataPoints.push(...refined.slice(1, -1));
                 }
+                dataPoints.push(next);
+                previous = next;
             }
         }
+        this.evaluator.vm.markerHandler = null;
 
         // 2. Draw each variable as a separate path
         // Use plotConfig if available, otherwise fallback to "y*" variables with default colors?
@@ -636,7 +666,7 @@ export class Plotter {
             // Actually, let's just stick to "Plot what is in plotConfig".
             // If user typed "y = x", markers is empty. plotConfig empty.
             // Just for usability, I will add 'y' if nothing else is marked.
-             if (foundVariables.has('y')) {
+             if (foundVariables.has('y') || markers.mark_x.size > 0) {
                  targetVariables.set('y', { color: '#ffffff', isGuide: false });
              }
         }
@@ -675,6 +705,8 @@ export class Plotter {
             let lastWorldY = NaN;
             let lastR = NaN;
             let lastAngle = NaN;
+            const isolatedPoints = [];
+            let pendingPoint = null;
 
             for (const point of dataPoints) {
                 const sx = point.sx;
@@ -684,6 +716,8 @@ export class Plotter {
                 // Check continuity
                 // If this point doesn't have the value, skip (gap in graph)
                 if (val === undefined || isNaN(val) || !isFinite(val)) {
+                    if (pendingPoint) isolatedPoints.push(pendingPoint);
+                    pendingPoint = null;
                     firstPoint = true;
                     continue;
                 }
@@ -762,21 +796,160 @@ export class Plotter {
                 // Add a small margin so points near the edge still render when partially visible
                 const margin = 50;
                 if (drawX < -margin || drawX > width + margin || drawY < -margin || drawY > height + margin) {
+                    if (pendingPoint) isolatedPoints.push(pendingPoint);
+                    pendingPoint = null;
                     firstPoint = true;
                     continue;
                 }
 
                 if (firstPoint) {
+                    if (pendingPoint) isolatedPoints.push(pendingPoint);
                     ctx.moveTo(drawX, drawY);
+                    pendingPoint = { x: drawX, y: drawY };
                     firstPoint = false;
                 } else {
                     ctx.lineTo(drawX, drawY);
+                    pendingPoint = null;
                 }
             }
+            if (pendingPoint) isolatedPoints.push(pendingPoint);
             ctx.stroke();
+            ctx.fillStyle = config.color;
+            for (const point of isolatedPoints) {
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, 1, 0, Math.PI * 2);
+                ctx.fill();
+            }
         }
+        this._drawCoordinateMarkers(markers, dataPoints, targetVariables);
         // After drawing plots, draw hover overlay if active
         // (Note: draw() will call _drawHover after drawPlots)
+    }
+
+    _drawCoordinateMarkers(markers, dataPoints, targets) {
+        if (!markers.mark_x.size && !markers.mark_y.size) return;
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const ctx = this.ctx;
+        const seen = new Map();
+        const readPoint = (sample, name) => {
+            const value = sample.values.get(name);
+            if (!Number.isFinite(value)) return null;
+            const x = this.polarMode ? value * Math.cos(sample.angle) : sample.angle;
+            const y = this.polarMode ? value * Math.sin(sample.angle) : value;
+            return { x, y };
+        };
+        const evaluate = (parameter, name) => {
+            try {
+                this.evaluator.evaluate(this.ast, this.polarMode ? { x: parameter, t: parameter } : { x: parameter });
+                return readPoint({ angle: parameter, values: this.evaluator.vm.globals }, name);
+            } catch (e) {
+                if (this.lastErrors.length < 10) this.lastErrors.push({ x: parameter, message: e.message || String(e) });
+                return null;
+            }
+        };
+        const drawPoint = (point, name, config) => {
+            if (!point) return;
+            const sx = this.toScreenX(point.x);
+            const sy = this.toScreenY(point.y);
+            if (!Number.isFinite(sx) || !Number.isFinite(sy) || sx < 0 || sx > width || sy < 0 || sy > height) return;
+            const existing = seen.get(name) || [];
+            if (existing.some(p => Math.hypot(p.x - sx, p.y - sy) < 1e-4)) return;
+            existing.push({ x: sx, y: sy });
+            seen.set(name, existing);
+
+            ctx.save();
+            ctx.strokeStyle = config.color;
+            ctx.fillStyle = config.color;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(sx, this.toScreenY(0));
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(this.toScreenX(0), sy);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.font = '12px sans-serif';
+            const format = value => Number(value.toPrecision(6)).toString();
+            const text = `(${format(point.x)}, ${format(point.y)})`;
+            const textWidth = ctx.measureText(text).width;
+            const tx = Math.max(0, Math.min(width - textWidth, sx + 6));
+            const ty = Math.max(12, Math.min(height - 2, sy - 6));
+            ctx.fillText(text, tx, ty);
+            ctx.restore();
+        };
+        const findRoots = (axis, target, name, config) => {
+            const tolerance = 1e-6 / (axis === 'x' ? this.scaleX : this.scaleY);
+            const points = dataPoints.map(sample => readPoint(sample, name));
+            const difference = point => point ? point[axis] - target : NaN;
+            const continuous = (a, b) => {
+                const va = a.values.get(name), vb = b.values.get(name);
+                const delta = b.angle - a.angle;
+                const limit = this.polarMode ? this.continuityThresholdPolar : this.continuityThresholdCartesian;
+                return Number.isFinite(va) && Number.isFinite(vb) &&
+                    Math.abs((vb - va) / Math.max(Math.abs(delta), this.continuityEps)) <= limit;
+            };
+            for (let i = 0; i < dataPoints.length; i++) {
+                const point = points[i];
+                const f = difference(point);
+                const prevF = i > 0 ? difference(points[i - 1]) : NaN;
+                const nextF = i + 1 < points.length ? difference(points[i + 1]) : NaN;
+                if (Number.isFinite(f) && Math.abs(f) <= tolerance &&
+                    !(Math.abs(prevF) <= tolerance && Math.abs(nextF) <= tolerance)) {
+                    drawPoint(point, name, config);
+                }
+                if (i === 0 || !Number.isFinite(f) || !Number.isFinite(prevF) ||
+                    f * prevF >= 0 || !continuous(dataPoints[i - 1], dataPoints[i])) continue;
+                let lo = dataPoints[i - 1].angle, hi = dataPoints[i].angle;
+                let flo = prevF, root = null;
+                for (let step = 0; step < 40; step++) {
+                    const mid = (lo + hi) / 2;
+                    const candidate = evaluate(mid, name);
+                    const fm = difference(candidate);
+                    if (!Number.isFinite(fm)) break;
+                    if (Math.abs(fm) <= tolerance) {
+                        root = candidate;
+                        break;
+                    }
+                    if (Math.sign(fm) === Math.sign(flo)) {
+                        lo = mid;
+                        flo = fm;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                drawPoint(root, name, config);
+            }
+            // A tangential intersection does not change sign; minimize its distance to the line.
+            for (let i = 1; i + 1 < dataPoints.length; i++) {
+                const a = difference(points[i - 1]), b = difference(points[i]), c = difference(points[i + 1]);
+                if (![a, b, c].every(Number.isFinite) || Math.abs(b) >= Math.abs(a) || Math.abs(b) >= Math.abs(c) ||
+                    !continuous(dataPoints[i - 1], dataPoints[i]) || !continuous(dataPoints[i], dataPoints[i + 1])) continue;
+                let lo = dataPoints[i - 1].angle, hi = dataPoints[i + 1].angle;
+                for (let step = 0; step < 40; step++) {
+                    const left = lo + (hi - lo) / 3, right = hi - (hi - lo) / 3;
+                    const fl = Math.abs(difference(evaluate(left, name)));
+                    const fr = Math.abs(difference(evaluate(right, name)));
+                    if (!Number.isFinite(fl) || !Number.isFinite(fr)) break;
+                    if (fl < fr) hi = right;
+                    else lo = left;
+                }
+                const candidate = evaluate((lo + hi) / 2, name);
+                if (Math.abs(difference(candidate)) <= tolerance) drawPoint(candidate, name, config);
+            }
+        };
+        for (const [name, config] of targets) {
+            if (config.isGuide) continue;
+            for (const x of markers.mark_x) {
+                if (this.polarMode) findRoots('x', x, name, config);
+                else if (this.toScreenX(x) >= 0 && this.toScreenX(x) <= width) drawPoint(evaluate(x, name), name, config);
+            }
+            for (const y of markers.mark_y) findRoots('y', y, name, config);
+        }
     }
     
     drawGrid() {
@@ -920,12 +1093,14 @@ export class Plotter {
         ctx.lineWidth = 2;
 
         if (this.polarMode) {
-            // In polar mode draw main radial axis (angle=0) and a small origin marker
-            const maxRadius = Math.max(this.canvas.width, this.canvas.height);
-            const x2 = originX + maxRadius;
-            const y2 = originY;
-            ctx.moveTo(originX, originY);
-            ctx.lineTo(x2, y2);
+            if (originY >= 0 && originY <= height) {
+                ctx.moveTo(0, originY);
+                ctx.lineTo(width, originY);
+            }
+            if (originX >= 0 && originX <= width) {
+                ctx.moveTo(originX, 0);
+                ctx.lineTo(originX, height);
+            }
             ctx.stroke();
 
             // Origin marker

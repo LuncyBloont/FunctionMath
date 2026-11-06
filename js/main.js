@@ -1,7 +1,6 @@
-import { Plotter } from './plotter.js?v=16';
+import { Plotter } from './plotter.js?v=17';
 import { Lexer } from './parser/lexer.js?v=16';
 import { Parser } from './parser/parser.js?v=16';
-import { Evaluator } from './parser/evaluator.js?v=16';
 
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('plotCanvas');
